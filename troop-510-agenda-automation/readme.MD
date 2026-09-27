@@ -40,7 +40,7 @@ Follow these steps to duplicate this automation for your own unit.
    const MASTER_FOLDER_ID = 'YOUR_FOLDER_ID_HERE'; 
    const TEMPLATE_DOC_ID = 'YOUR_TEMPLATE_ID_HERE';
 
-```
+   ```
 
 5. Click the **Save** (floppy disk) icon.
 
