@@ -1,5 +1,39 @@
-const MASTER_FOLDER_ID = 'YOUR_DRIVE_FOLDER_ID_HERE'; 
-const TEMPLATE_DOC_ID = 'YOUR_TEMPLATE_DOC_ID_HERE';
+const MASTER_FOLDER_ID = 'YOUR_FOLDER_ID_HERE'; 
+const TEMPLATE_DOC_ID = 'YOUR_TEMPLATE_ID_HERE';
+
+// ==========================================
+// CUSTOM MENU IN GOOGLE SHEETS
+// ==========================================
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('Troop 510 Menu')
+      .addItem('Generate Latest Agenda (Current Month)', 'manualGenerateCurrent')
+      .addToUi();
+}
+
+function manualGenerateCurrent() {
+  const today = new Date();
+  const twoMonthsFromNow = new Date(today.getTime() + (60 * 24 * 60 * 60 * 1000));
+  const calendars = CalendarApp.getAllCalendars();
+  
+  let currentMeetingDate = null; 
+
+  for (let i = 0; i < calendars.length; i++) {
+    const events = calendars[i].getEvents(today, twoMonthsFromNow, {search: 'Committee Meeting'});
+    if (events.length > 0) {
+      currentMeetingDate = events[0].getStartTime();
+      break;
+    }
+  }
+  
+  if (currentMeetingDate) {
+    const currentAgendaUrl = generateAgenda(currentMeetingDate, true);
+    sendHtmlEmail(currentAgendaUrl, "#", currentMeetingDate, null); 
+    SpreadsheetApp.getUi().alert("Agenda Updated! Check your email for the new link.");
+  } else {
+    SpreadsheetApp.getUi().alert("Error: Could not find an upcoming Committee Meeting on the calendar.");
+  }
+}
 
 // ==========================================
 // 1. RUN THIS ONCE TO BUILD THE FORM
@@ -46,7 +80,7 @@ function buildTroopForm() {
   subcommittees.forEach(sub => {
     const pageBreak = form.addPageBreakItem().setTitle(sub.name).setGoToPage(FormApp.PageNavigationType.SUBMIT);
     const question = form.addParagraphTextItem().setTitle(sub.tag).setRequired(true);
-    question.setHelpText(sub.tag === "previous meetings minutes" ? "Please paste the Google Doc link to last month's approved meeting minutes." : standardPrompt);
+    question.setHelpText(sub.tag === "previous meetings minutes" ? "Please paste ONLY the Google Doc link to last month's approved meeting minutes so it can generate a QR code." : standardPrompt);
     choices.push(mcItem.createChoice(sub.name, pageBreak));
   });
 
@@ -70,12 +104,12 @@ function runDailyCalendarCheck() {
     const events = calendars[i].getEventsForDay(tenDaysFromNow, {search: 'Committee Meeting'});
     if (events.length > 0) {
       const currentMeetingDate = events[0].getStartTime();
-      const currentAgendaUrl = generateAgenda(currentMeetingDate);
+      const currentAgendaUrl = generateAgenda(currentMeetingDate, true);
       
       const nextMeetingDate = getNextMeetingDateObj(currentMeetingDate);
       let nextAgendaUrl = "#";
       if (nextMeetingDate) {
-        nextAgendaUrl = generateAgenda(nextMeetingDate);
+        nextAgendaUrl = generateAgenda(nextMeetingDate, false);
       }
 
       sendHtmlEmail(currentAgendaUrl, nextAgendaUrl, currentMeetingDate, nextMeetingDate);
@@ -111,12 +145,12 @@ function testRunNow() {
     }
   }
   
-  const currentAgendaUrl = generateAgenda(currentMeetingDate);
+  const currentAgendaUrl = generateAgenda(currentMeetingDate, true);
   
   const nextMeetingDate = getNextMeetingDateObj(currentMeetingDate);
   let nextAgendaUrl = "#";
   if (nextMeetingDate) {
-    nextAgendaUrl = generateAgenda(nextMeetingDate);
+    nextAgendaUrl = generateAgenda(nextMeetingDate, false);
   }
 
   sendHtmlEmail(currentAgendaUrl, nextAgendaUrl, currentMeetingDate, nextMeetingDate);
@@ -173,7 +207,8 @@ function getNextMeetingDateFormatted(currentMeetingDate) {
   return "[No meeting found in next 60 days]";
 }
 
-function generateAgenda(meetingDate) {
+// Updated to accept isCurrentMonth flag to control form updating
+function generateAgenda(meetingDate, isCurrentMonth = true) {
   const year = meetingDate.getFullYear();
   const monthStr = String(meetingDate.getMonth() + 1).padStart(2, '0');
   const folderName = `${year}-${monthStr}_committee_meeting`; 
@@ -190,6 +225,16 @@ function generateAgenda(meetingDate) {
     targetFolder = masterFolder.createFolder(folderName);
   }
 
+  // UPDATE FORM INSTRUCTIONS DYNAMICALLY
+  if (isCurrentMonth) {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const formUrl = ss.getFormUrl();
+    if (formUrl) {
+      const form = FormApp.openByUrl(formUrl);
+      form.setDescription(`Welcome to the new streamlined reporting process!\n\n📂 COMPLEX REPORTS & DOCUMENTS:\nIf your report requires specific formatting or is very long, please create a Google Doc in this month's shared folder: \n${targetFolder.getUrl()}\n\nOnce created, simply paste ONLY the link to your document into your section below. The system will automatically convert your link into a QR code for the printed agenda!\n\nOtherwise, just type your plain text update below.`);
+    }
+  }
+
   const existingDocs = targetFolder.getFilesByName(docName);
   while (existingDocs.hasNext()) {
     existingDocs.next().setTrashed(true);
@@ -201,7 +246,6 @@ function generateAgenda(meetingDate) {
   const body = doc.getBody();
   const header = doc.getHeader();
 
-  // 1. Inject Date Tags
   const formattedCurrentDate = formatMeetingDate(meetingDate);
   if (header) {
     header.replaceText("<<CURRENT_MEETING_DATE>>", formattedCurrentDate);
@@ -211,9 +255,9 @@ function generateAgenda(meetingDate) {
   const nextMeetingFormatted = getNextMeetingDateFormatted(meetingDate);
   body.replaceText("<<NEXT_MEETING_DATE>>", nextMeetingFormatted);
 
-  // 2. Inject Form Responses (Smart Check)
   const today = new Date();
   const daysUntilMeeting = (meetingDate.getTime() - today.getTime()) / (1000 * 3600 * 24);
+  const isPending = daysUntilMeeting > 20;
   
   const tags = [
     "previous meetings minutes", "Scoutmaster_mcconnell_Report", "Scoutmaster_cain_Report",
@@ -222,26 +266,16 @@ function generateAgenda(meetingDate) {
     "Eagle_Report", "Awards_Report", "Outdoor_Report", "Service_Report", "Fun_Report", "Announcement_Report"
   ];
 
-  // If meeting is > 20 days away, it is next month's meeting. DO NOT inject current data yet.
-  if (daysUntilMeeting > 20) {
-    tags.forEach(tag => {
-      body.replaceText(`<<${tag}>>`, "[Pending next month's submissions]");
-    });
-  } else {
-    // Current month meeting. Inject the latest responses.
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    const data = sheet.getDataRange().getValues();
-    const headers = data[0]; 
-    
-    let latestResponses = {};
-    
-    // Set the window to exactly 10 days prior to the meeting date
-    const tenDaysBeforeMeeting = new Date(meetingDate.getTime() - (10 * 24 * 60 * 60 * 1000));
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0]; 
+  
+  let latestResponses = {};
+  const tenDaysBeforeMeeting = new Date(meetingDate.getTime() - (10 * 24 * 60 * 60 * 1000));
 
+  if (!isPending) {
     for (let i = 1; i < data.length; i++) {
       const timestamp = new Date(data[i][0]); 
-      
-      // Only pull data if it was submitted within the 10 days leading up to the meeting
       if (timestamp >= tenDaysBeforeMeeting) {
         for (let j = 1; j < headers.length; j++) { 
           if (data[i][j] !== "") {
@@ -250,12 +284,53 @@ function generateAgenda(meetingDate) {
         }
       }
     }
-
-    tags.forEach(tag => {
-    let reportText = latestResponses[tag] || "No update";
-    body.replaceText(`<<${tag}>>`, reportText);
-  });
   }
+
+  tags.forEach(tag => {
+    if (isPending) {
+      body.replaceText(`<<${tag}>>`, "[Pending next month's submissions]");
+      return; 
+    }
+
+    let reportText = String(latestResponses[tag] || "No update").trim();
+    
+    // Check if the response is strictly a single URL
+    const isUrl = /^https?:\/\/[^\s]+$/.test(reportText);
+
+    if (isUrl) {
+      let found = body.findText(`<<${tag}>>`);
+      while (found) {
+        let textElem = found.getElement().asText();
+        let start = found.getStartOffset();
+        let end = found.getEndOffsetInclusive();
+        
+        // Remove the <<TAG>> text entirely
+        textElem.deleteText(start, end);
+        
+        let p = textElem.getParent().asParagraph();
+        
+        // Generate QR code via Google Chart API
+        let qrUrl = "https://chart.googleapis.com/chart?chs=150x150&cht=qr&chl=" + encodeURIComponent(reportText);
+        try {
+          let blob = UrlFetchApp.fetch(qrUrl).getBlob();
+          p.appendInlineImage(blob);
+          
+          // Add a clickable link next to the QR code for digital viewers
+          let linkText = p.appendText("  🔗 Link to Document");
+          linkText.setLinkUrl(reportText);
+        } catch(e) {
+           // Fallback just in case the API fails
+           p.appendText(reportText);
+        }
+        
+        // Check if there are other instances of the same tag
+        found = body.findText(`<<${tag}>>`, found);
+      }
+    } else {
+      // Standard text replacement
+      body.replaceText(`<<${tag}>>`, reportText);
+    }
+  });
   
   doc.saveAndClose();
   return newDoc.getUrl();
@@ -285,11 +360,11 @@ function sendHtmlEmail(currentAgendaUrl, nextAgendaUrl, currentMeetingDate, next
       <ul>
         <li style="margin-bottom: 15px;">
           <strong>Send to Committee:</strong> <a href="${formUrl}" style="color: #1a73e8; font-weight: bold;">Master Subcommittee Report Form</a>
-          <br><span style="font-size: 12px; color: #666;">(This single form link is permanent and is used every month. Do not recreate it.)</span>
+          <br><span style="font-size: 12px; color: #666;">(This form description has been dynamically updated with the link to the ${currentMonthName} Google Drive folder.)</span>
         </li>
         <li style="margin-bottom: 15px;">
           <strong>Current Month:</strong> <a href="${currentAgendaUrl}" style="color: #1a73e8;">Drafted Agenda (${currentMonthName})</a>
-          <br><span style="font-size: 12px; color: #666;">(Recent form responses have been injected)</span>
+          <br><span style="font-size: 12px; color: #666;">(Recent form responses and QR codes have been injected)</span>
         </li>
         <li style="margin-bottom: 15px;">
           <strong>Next Month Prep:</strong> ${nextAgendaHtml}
@@ -300,7 +375,7 @@ function sendHtmlEmail(currentAgendaUrl, nextAgendaUrl, currentMeetingDate, next
       </ul>
       
       <hr style="border: 0; height: 1px; background: #eee; margin: 20px 0;" />
-      <p style="font-size: 12px; color: #777;"><em>Note: The current and next month's folders are confirmed active in Google Drive. To manually override responses, edit the Google Sheet directly and run the trigger.</em></p>
+      <p style="font-size: 12px; color: #777;"><em>Note: The current and next month's folders are confirmed active in Google Drive. To manually override responses, edit the Google Sheet directly and run the trigger via the custom menu.</em></p>
     </div>
   `;
 
@@ -309,41 +384,4 @@ function sendHtmlEmail(currentAgendaUrl, nextAgendaUrl, currentMeetingDate, next
     subject: `[Troop 510] ${currentMonthName} & ${nextMonthName} Agenda Links`,
     htmlBody: htmlBody
   });
-}
-
-// ==========================================
-// CUSTOM MENU IN GOOGLE SHEETS
-// ==========================================
-function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  ui.createMenu('Troop 510 Menu')
-      .addItem('Generate Latest Agenda (Current Month)', 'manualGenerateCurrent')
-      .addToUi();
-}
-
-function manualGenerateCurrent() {
-  // Finds the next immediate meeting and forces an update
-  const today = new Date();
-  const twoMonthsFromNow = new Date(today.getTime() + (60 * 24 * 60 * 60 * 1000));
-  const calendars = CalendarApp.getAllCalendars();
-  
-  let currentMeetingDate = null; 
-
-  for (let i = 0; i < calendars.length; i++) {
-    const events = calendars[i].getEvents(today, twoMonthsFromNow, {search: 'Committee Meeting'});
-    if (events.length > 0) {
-      currentMeetingDate = events[0].getStartTime();
-      break;
-    }
-  }
-  
-  if (currentMeetingDate) {
-    const currentAgendaUrl = generateAgenda(currentMeetingDate);
-    
-    // We pass # for next month so it doesn't bother generating November's draft during a last-minute October update
-    sendHtmlEmail(currentAgendaUrl, "#", currentMeetingDate, null); 
-    SpreadsheetApp.getUi().alert("Agenda Updated! Check your email for the new link.");
-  } else {
-    SpreadsheetApp.getUi().alert("Error: Could not find an upcoming Committee Meeting on the calendar.");
-  }
 }
