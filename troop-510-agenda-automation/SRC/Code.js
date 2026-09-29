@@ -310,11 +310,15 @@ function generateAgenda(meetingDate, isCurrentMonth = true) {
         
         let p = textElem.getParent().asParagraph();
         
-        // Use QuickChart API (reliable replacement for deprecated Google Chart API)
-        let qrUrl = "https://quickchart.io/qr?size=150&text=" + encodeURIComponent(reportText);
+        // Use QuickChart API with reduced size (75x75)
+        let qrUrl = "https://quickchart.io/qr?size=75&text=" + encodeURIComponent(reportText);
         try {
           let blob = UrlFetchApp.fetch(qrUrl).getBlob();
-          p.appendInlineImage(blob);
+          let inlineImage = p.appendInlineImage(blob);
+          
+          // Explicitly lock the dimensions in the document
+          inlineImage.setWidth(75);
+          inlineImage.setHeight(75);
           
           // Add a clickable link next to the QR code for digital viewers
           let linkText = p.appendText("  🔗 Link to Document");
