@@ -53,6 +53,7 @@ function buildTroopForm() {
   form.setAllowResponseEdits(true); 
 
   const subcommittees = [
+    { name: "Safety Minute", tag: "safety_minutes" },
     { name: "Secretary (Meeting Minutes Link)", tag: "previous meetings minutes" },
     { name: "Scoutmaster (Boy Troop)", tag: "Scoutmaster_mcconnell_Report" },
     { name: "Scoutmaster (Girl Troop)", tag: "Scoutmaster_cain_Report" }, 
@@ -260,7 +261,7 @@ function generateAgenda(meetingDate, isCurrentMonth = true) {
   const isPending = daysUntilMeeting > 20;
   
   const tags = [
-    "previous meetings minutes", "Scoutmaster_mcconnell_Report", "Scoutmaster_cain_Report",
+    "safety_minutes", "previous meetings minutes", "Scoutmaster_mcconnell_Report", "Scoutmaster_cain_Report",
     "Membership_Report", "Recruiting_Report", "Training_Report", "Treasurer_Report", 
     "Fall_wreaths_Report", "Popcorn_Report", "EggMyYard_Report", "Advancement_Report", 
     "Eagle_Report", "Awards_Report", "Outdoor_Report", "Service_Report", "Fun_Report", "Announcement_Report"
@@ -309,8 +310,8 @@ function generateAgenda(meetingDate, isCurrentMonth = true) {
         
         let p = textElem.getParent().asParagraph();
         
-        // Generate QR code via Google Chart API
-        let qrUrl = "https://chart.googleapis.com/chart?chs=150x150&cht=qr&chl=" + encodeURIComponent(reportText);
+        // Use QuickChart API (reliable replacement for deprecated Google Chart API)
+        let qrUrl = "https://quickchart.io/qr?size=150&text=" + encodeURIComponent(reportText);
         try {
           let blob = UrlFetchApp.fetch(qrUrl).getBlob();
           p.appendInlineImage(blob);
