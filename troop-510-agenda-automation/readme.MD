@@ -15,7 +15,7 @@ This project connects Google Forms, Google Sheets, Google Calendar (including im
 
 ---
 
-## 🛠️ Step-by-Step Setup Guide
+##  Step-by-Step Setup Guide
 
 Follow these steps to duplicate this automation for your own unit.
 
@@ -41,3 +41,51 @@ Follow these steps to duplicate this automation for your own unit.
    ```javascript
    const MASTER_FOLDER_ID = 'YOUR_FOLDER_ID_HERE'; 
    const TEMPLATE_DOC_ID = 'YOUR_TEMPLATE_ID_HERE';
+
+Click the Save (floppy disk) icon.
+
+###  Step 5: Build the Form & Link the Sheet
+1. Still inside the Apps Script editor, look at the top toolbar. Select `buildTroopForm` from the function dropdown menu.
+2. Click `Run`. (Google will ask you to authorize the script permissions. Click Advanced > Go to script).
+3. The script will automatically generate the Google Form and link it directly to your blank Google Sheet.
+4. Close the Apps Script window and refresh your Google Sheet. You will now see a new tab titled "Form Responses 1" with all the column headers perfectly built.
+
+### Step 6: Calendar Preparation
+1. For the script to know when to run, you must have an event on your Google Calendar titled exactly Committee Meeting. The script searches 60 days into the future, so ensure you have recurring events set up.
+
+### Step 7: Automate the Triggers & Sync
+1. The Daily Calendar Check: In the Apps Script editor, click the Clock Icon (Triggers) on the left menu. Click + Add Trigger. Set it to run `runDailyCalendarCheck` via a Time-driven -> Day timer between Midnight to 1am. Click Save.
+2. The Live Form Sync: Go back to your Google Sheet. At the top menu, click Troop 510 Menu > Activate Live Form Sync. (You only ever have to click this once. It tells the sheet to automatically update the Google Form every time someone submits a new answer).
+
+## Administrator Usage Guide
+Once the system is set up, it requires almost zero maintenance. Here is how to run the workflow month-to-month.
+
+### Phase 1: The Call for Reports (12–14 Days Before Meeting)
+1. Send an email to your committee asking for their updates.
+2. Provide the link to your Google Form. (This link is permanent and never changes).
+3. Remind them that if they have a complex report (budget tables, specific formatting, long paragraphs), they should create a Google Doc in the shared folder provided in the Form's description, and submit only the URL to the form.
+
+### Phase 2: QR Codes & Complex Documents
+If a user submits only a web link (e.g., https://docs.google.com/document/...) into their form box, the system will automatically convert it into a 75x75 pixel QR Code on the printed agenda.
+
+Note: It must be only the link. If they type "Here is my report: https...", it will paste as plain text.
+
+### Phase 3: The Live Dashboard
+When a committee member clicks the form link, they will see exactly what the system currently has on file for their role under the "CURRENTLY FILED REPORT" section. If they submit a new response, the form will instantly update itself to display their new text for the next person who looks at it.
+
+### Phase 4: Automatic Generation (10 Days Before Meeting)
+Exactly 10 days before the scheduled meeting, the system will run overnight. You will receive an automated email containing links to:
+
+- The Master Google Form.
+- The newly generated Current Month's Agenda (populated with recent reports).
+- The Next Month's Agenda (a blank template for future use).
+- The Master Spreadsheet containing raw data.
+
+### Phase 5: Handling Last-Minute Updates
+If a subcommittee chair submits their report after the agenda has been generated, do not copy and paste their text into the Google Doc manually.
+
+1. Open the Responses Google Sheet.
+2. Click Troop 510 Menu > Generate Latest Agenda (Current Month) at the top of the sheet.
+3. The system will instantly delete the outdated draft, generate a brand new one with the late submission included, and email you the updated link.
+
+Tip: To fix a typo in someone's report, fix it directly in the Google Sheet and click this button to regenerate the agenda.
