@@ -4,7 +4,7 @@ A zero-touch Google Workspace automation designed to completely streamline month
 
 This project connects Google Forms, Google Sheets, Google Calendar (including imported Scoutbook/TroopMaster feeds), and Google Docs. It aggregates monthly subcommittee reports, prevents data overlap, generates beautifully formatted meeting agendas for both the current and upcoming month, and emails the completed documents directly to the Committee Chair or Secretary.
 
-## ✨ Features
+## Features
 * **Dual-Month Generation:** Automatically generates a fully populated agenda for the current month's meeting, alongside a clean, pre-formatted draft for the *next* month's meeting.
 * **Smart 10-Day Lookback Window:** Strictly pulls form responses submitted within the 10 days leading up to a specific committee meeting date, ensuring old data from previous months is never accidentally injected.
 * **Live Form Dashboard Sync:** The Google Form automatically updates its own help text to show exactly what is currently filed in the system for each role, acting as a real-time dashboard for the committee.
