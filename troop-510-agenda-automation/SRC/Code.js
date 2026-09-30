@@ -8,6 +8,8 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('Troop 510 Menu')
       .addItem('Generate Latest Agenda (Current Month)', 'manualGenerateCurrent')
+      .addItem('Activate Live Form Sync', 'setupFormTrigger') // NEW BUTTON
+      .addItem('Force Form Display Update', 'updateFormWithLatest') // NEW BUTTON
       .addToUi();
 }
 
@@ -29,10 +31,95 @@ function manualGenerateCurrent() {
   if (currentMeetingDate) {
     const currentAgendaUrl = generateAgenda(currentMeetingDate, true);
     sendHtmlEmail(currentAgendaUrl, "#", currentMeetingDate, null); 
+    updateFormWithLatest(); // Force form to sync when agenda generates
     SpreadsheetApp.getUi().alert("Agenda Updated! Check your email for the new link.");
   } else {
     SpreadsheetApp.getUi().alert("Error: Could not find an upcoming Committee Meeting on the calendar.");
   }
+}
+
+// ==========================================
+// NEW: REAL-TIME FORM DASHBOARD SYNC
+// ==========================================
+function setupFormTrigger() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const triggers = ScriptApp.getProjectTriggers();
+  
+  // Prevent duplicate triggers from being created
+  let hasTrigger = triggers.some(t => t.getHandlerFunction() === 'updateFormWithLatest');
+  if (!hasTrigger) {
+    ScriptApp.newTrigger('updateFormWithLatest')
+      .forSpreadsheet(ss)
+      .onFormSubmit()
+      .create();
+    SpreadsheetApp.getUi().alert("Live Sync Activated! The form will now automatically update itself every time someone hits submit.");
+  } else {
+    SpreadsheetApp.getUi().alert("Live Sync is already active on this form.");
+  }
+  
+  // Run it once immediately to populate the form right now
+  updateFormWithLatest();
+}
+
+function updateFormWithLatest() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const formUrl = ss.getFormUrl();
+  if (!formUrl) return;
+  
+  const form = FormApp.openByUrl(formUrl);
+  const today = new Date();
+  const twoMonthsFromNow = new Date(today.getTime() + (60 * 24 * 60 * 60 * 1000));
+  const calendars = CalendarApp.getAllCalendars();
+  
+  let currentMeetingDate = null; 
+  for (let i = 0; i < calendars.length; i++) {
+    const events = calendars[i].getEvents(today, twoMonthsFromNow, {search: 'Committee Meeting'});
+    if (events.length > 0) {
+      currentMeetingDate = events[0].getStartTime();
+      break;
+    }
+  }
+  
+  let latestResponses = {};
+  let isPending = false;
+
+  if (currentMeetingDate) {
+    const daysUntilMeeting = (currentMeetingDate.getTime() - today.getTime()) / (1000 * 3600 * 24);
+    isPending = daysUntilMeeting > 20;
+
+    if (!isPending) {
+      const data = ss.getActiveSheet().getDataRange().getValues();
+      const headers = data[0]; 
+      const tenDaysBeforeMeeting = new Date(currentMeetingDate.getTime() - (10 * 24 * 60 * 60 * 1000));
+
+      for (let i = 1; i < data.length; i++) {
+        const timestamp = new Date(data[i][0]); 
+        if (timestamp >= tenDaysBeforeMeeting) {
+          for (let j = 1; j < headers.length; j++) { 
+            if (data[i][j] !== "") {
+              latestResponses[headers[j]] = data[i][j];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Update every paragraph question in the form
+  const items = form.getItems(FormApp.ItemType.PARAGRAPH_TEXT);
+  items.forEach(item => {
+    let pItem = item.asParagraphTextItem();
+    let tag = pItem.getTitle();
+    
+    let basePrompt = (tag === "previous meetings minutes") 
+      ? "Please paste ONLY the Google Doc link to last month's approved meeting minutes so it can generate a QR code." 
+      : "Please provide your update in this box. To keep things simple, consider addressing:\n• What did you accomplish?\n• What are you working on?\n• Do you need help with any problems?\n• Any future plans or announcements?";
+    
+    let currentText = isPending ? "Pending next month's submissions." : (latestResponses[tag] || "No update currently on file.");
+    
+    // Push the dynamic dashboard text to the Google Form
+    pItem.setHelpText(`${basePrompt}\n\n👇 CURRENTLY FILED REPORT (Review Only) 👇\n--------------------------------------------------\n${currentText}\n--------------------------------------------------\n(Submit a new response below to overwrite this.)`);
+  });
 }
 
 // ==========================================
@@ -76,12 +163,12 @@ function buildTroopForm() {
   const mcItem = form.addListItem().setTitle('Select your Subcommittee / Role').setRequired(true);
   const choices = [];
   
-  const standardPrompt = "Please provide your update in this box. To keep things simple, consider addressing:\n• What did you accomplish?\n• What are you working on?\n• Do you need help with any problems?\n• Any future plans or announcements?";
+  const standardPrompt = "Please provide your update in this box.";
 
   subcommittees.forEach(sub => {
     const pageBreak = form.addPageBreakItem().setTitle(sub.name).setGoToPage(FormApp.PageNavigationType.SUBMIT);
     const question = form.addParagraphTextItem().setTitle(sub.tag).setRequired(true);
-    question.setHelpText(sub.tag === "previous meetings minutes" ? "Please paste ONLY the Google Doc link to last month's approved meeting minutes so it can generate a QR code." : standardPrompt);
+    question.setHelpText(standardPrompt);
     choices.push(mcItem.createChoice(sub.name, pageBreak));
   });
 
@@ -114,6 +201,7 @@ function runDailyCalendarCheck() {
       }
 
       sendHtmlEmail(currentAgendaUrl, nextAgendaUrl, currentMeetingDate, nextMeetingDate);
+      updateFormWithLatest(); // Force form to sync
       foundMeeting = true;
       break; 
     }
@@ -155,6 +243,7 @@ function testRunNow() {
   }
 
   sendHtmlEmail(currentAgendaUrl, nextAgendaUrl, currentMeetingDate, nextMeetingDate);
+  updateFormWithLatest(); 
 }
 
 // ==========================================
@@ -208,7 +297,6 @@ function getNextMeetingDateFormatted(currentMeetingDate) {
   return "[No meeting found in next 60 days]";
 }
 
-// Updated to accept isCurrentMonth flag to control form updating
 function generateAgenda(meetingDate, isCurrentMonth = true) {
   const year = meetingDate.getFullYear();
   const monthStr = String(meetingDate.getMonth() + 1).padStart(2, '0');
@@ -295,7 +383,6 @@ function generateAgenda(meetingDate, isCurrentMonth = true) {
 
     let reportText = String(latestResponses[tag] || "No update").trim();
     
-    // Check if the response is strictly a single URL
     const isUrl = /^https?:\/\/[^\s]+$/.test(reportText);
 
     if (isUrl) {
@@ -305,34 +392,25 @@ function generateAgenda(meetingDate, isCurrentMonth = true) {
         let start = found.getStartOffset();
         let end = found.getEndOffsetInclusive();
         
-        // Remove the <<TAG>> text entirely
         textElem.deleteText(start, end);
-        
         let p = textElem.getParent().asParagraph();
         
-        // Use QuickChart API with reduced size (75x75)
         let qrUrl = "https://quickchart.io/qr?size=75&text=" + encodeURIComponent(reportText);
         try {
           let blob = UrlFetchApp.fetch(qrUrl).getBlob();
           let inlineImage = p.appendInlineImage(blob);
-          
-          // Explicitly lock the dimensions in the document
           inlineImage.setWidth(75);
           inlineImage.setHeight(75);
           
-          // Add a clickable link next to the QR code for digital viewers
           let linkText = p.appendText("  🔗 Link to Document");
           linkText.setLinkUrl(reportText);
         } catch(e) {
-           // Fallback just in case the API fails
            p.appendText(reportText);
         }
         
-        // Check if there are other instances of the same tag
         found = body.findText(`<<${tag}>>`, found);
       }
     } else {
-      // Standard text replacement
       body.replaceText(`<<${tag}>>`, reportText);
     }
   });
